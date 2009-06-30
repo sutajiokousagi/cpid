@@ -8,7 +8,7 @@ all: build
 
 build: config-${TARGET}
 	$(MAKE) -C ${BEECRYPT} CROSS_COMPILE=$(TARGET)- DESTDIR=$(PREFIX)
-	$(TARGET)-gcc -static  -I${BEECRYPT} -o keygen keygen.c ${BEECRYPT}/.libs/libbeecrypt.a -lpthread
+	$(TARGET)-gcc -g -I${BEECRYPT} -o keygen keygen.c ${BEECRYPT}/.libs/libbeecrypt.a -lpthread
 
 config-${TARGET}:
 	cd ${BEECRYPT} ; \

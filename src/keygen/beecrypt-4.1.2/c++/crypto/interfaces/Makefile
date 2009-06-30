@@ -85,9 +85,9 @@ AUTOMAKE = ${SHELL} /home/scross/Code/falconwing-build/cpid-1.0/src/keygen/beecr
 AWK = mawk
 CC = arm-linux-gcc
 CCAS = arm-linux-gcc
-CCASFLAGS = -g -O2
+CCASFLAGS = -g
 CCDEPMODE = depmode=gcc3
-CFLAGS =  -O2 -DNDEBUG -fomit-frame-pointer -Wa,--noexecstack
+CFLAGS =  -DNDEBUG -fomit-frame-pointer -Wa,--noexecstack
 CPP = arm-linux-gcc -E
 CPPFLAGS =  -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -DOPTIMIZE_ARM
 CXX = arm-linux-g++

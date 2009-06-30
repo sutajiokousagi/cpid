@@ -1,0 +1,41 @@
+cc: "Ken Steele" <ken@chumby.com>
+From: "Duane Maxwell" <duane@chumby.com>
+Subject: Re: security abstraction layer driver
+Date: Sun, 11 Jun 2006 15:02:25 -0700
+To: "bunnie" <bunnie@bunniestudios.com>
+X-Mailer: Apple Mail (2.750)
+X-OriginalArrivalTime: 11 Jun 2006 22:04:04.0387 (UTC)
+ FILETIME=[F3F66F30:01C68DA2]
+X-WSS-ID: 68933C702289250654-01-01
+Content-Type: text/plain;
+ charset=us-ascii;
+ delsp=yes;
+ format=flowed
+Content-Transfer-Encoding: 7bit
+
+OK - then what I propose is that you make a simple userland program  
+that takes commands through stdin and outputs through stdout, and  
+we'll connect it to the Flash player through a pipe using popen().
+
+something like:
+
+[d/e]:[keypair index]:[cipher]:[hexdigits]\n
+
+responds with:
+
+[hexdigits]\n
+
+For instance, encoding
+
+e:3:DES:DEADFACEBEEFCAFE <- command
+96A7637413FE5A9F <- response
+
+...decoding...
+
+d:3:DES:96A7637413FE5A9F <- command
+DEADFACEBEEFCAFE <- response
+
+By using stdio, this makes it easy to test/debug.  You'd pad missing  
+hex digits necessary to get a full block with zeros.
+
+-- Duane
