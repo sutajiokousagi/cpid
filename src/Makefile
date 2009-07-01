@@ -3,19 +3,10 @@
 
 include ../../config/config.mk
 
-# Extras to build
-TARBALL=template-110.tar.gz
-
 all: build
 
-build: unpack
-	$(MAKE) -C $(lastword $(wildcard src/*)) CROSS_COMPILE=$(TARGET)- DESTDIR=$(PREFIX)
-
-unpack: $(TARBALL)
-	@echo "Unpacking $(TARBALL) to src"
-	-mkdir src
-	cd src; tar xzf ../$(TARBALL)
-	touch $@
+build:
+	$(MAKE) -C cpid CROSS_COMPILE=$(TARGET)- DESTDIR=$(PREFIX)
 
 clean:
 	-rm -rf src unpack
@@ -26,7 +17,7 @@ ifeq ($(PREFIX),)
 	@exit 1
 else
 	@echo "Installing to $(PREFIX)"
-	$(MAKE) -C $(lastword $(wildcard src/*)) CROSS_COMPILE=$(TARGET)- DESTDIR=$(abspath $(PREFIX)) install
+	$(MAKE) -C cpid CROSS_COMPILE=$(TARGET)- DESTDIR=$(abspath $(PREFIX)) install PREFIX=$(abspath $(PREFIX))
 endif
 
 # unpack should NOT be phony

@@ -128,7 +128,7 @@ void eraseKey(unsigned int keyNum);
 void wait_ms(unsigned int var);
 unsigned short ADC_RandValue();
 
-#define ASCII_EOF 0x4
+#define ASCII_EOF 0x0D
 #define AUTH_INTERVAL_SECS 90  // 90 seconds ... once per 90-second leak is OK with user present button!
 #define AUTH_MAX_AUTHS  15  // up to 15 auth tries -- then the leak counter starts
 

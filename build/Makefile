@@ -28,7 +28,7 @@ help:
 
 clean:
 	# modify this section accordingly
-	#$(MAKE) -C ../src KERNDIR=$(LINUX_FROM_SRC) clean
+	$(MAKE) -C ../src KERNDIR=$(LINUX_FROM_SRC) clean
 
 exports:
 
@@ -36,8 +36,8 @@ clean-exports:
 
 build-all:
 	# modify this section accordingly
-	#$(MAKE) -C ../src KERNDIR=$(LINUX_FROM_SRC) build
-	#$(MAKE) -C ../src KERNDIR=$(LINUX_FROM_SRC) PREFIX=$(INSTALL_DIR)/rfs1 install
+	$(MAKE) -C ../src KERNDIR=$(LINUX_FROM_SRC) build
+	$(MAKE) -C ../src KERNDIR=$(LINUX_FROM_SRC) PREFIX=$(INSTALL_DIR)/rfs1 install
 
 clean-all:
 	$(MAKE) clean
