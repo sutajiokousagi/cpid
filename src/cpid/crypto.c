@@ -45,6 +45,9 @@
 #include "commonCrypto.h"
 #include <time.h>
 #include <stdio.h>
+#include <linux/i2c.h>
+#include <linux/i2c-dev.h>
+#include <fcntl.h>
 
 unsigned int keyCandidate = 0xFFFFFFFF;
 unsigned int *keyPtr = 0;
@@ -740,6 +743,64 @@ void printADC() {
 }
 #endif
 
+
+// eeprom-specific functions.
+#define I2C_FILE_NAME "/dev/i2c-0"
+#define EEPROM_ADDR (0xA2)
+#define EEPROM_BYTES (16384)
+static int read_from_eeprom(int file, int addr, char *bytes, int size) {
+    static struct i2c_rdwr_ioctl_data packets;
+    static struct i2c_msg messages[1];
+    char outbuf[2];
+    int bytes_at_a_time = 64;
+    int reg = 0;
+
+    while(size) {
+        // On the last loop around, the bytes_at_a_time value might be
+        // greater than size.  Clamp it.
+        if(bytes_at_a_time > size)
+            bytes_at_a_time = size;
+
+        // Start by resetting the read address to what it ought to be.
+        outbuf[0] = (reg>>8)&0x3f;
+        outbuf[1] = (reg   )&0xff;
+
+        messages[0].addr  = addr;
+        messages[0].flags = 0;
+        messages[0].len   = sizeof(outbuf);
+        messages[0].buf   = outbuf;
+
+        packets.msgs = messages;
+        packets.nmsgs = 1;
+        if(ioctl(file, I2C_RDWR, &packets) < 0) {
+            perror("Unable to set register");
+            return 1;
+        }
+
+        messages[0].addr    = addr;
+        messages[0].flags   = I2C_M_RD;
+        messages[0].len     = bytes_at_a_time;
+        messages[0].buf     = bytes;
+
+        packets.msgs        = messages;
+        packets.nmsgs       = 1;
+
+        if(ioctl(file, I2C_RDWR, &packets) < 0) {
+            char err[128];
+            snprintf(err, sizeof(err), "Unable to read %d bytes from register %d",
+                    bytes_at_a_time, reg);
+            perror(err);
+            return 1;
+        }
+
+        bytes += bytes_at_a_time;
+        size  -= bytes_at_a_time;
+        reg   += bytes_at_a_time;
+    }
+
+    return 0;
+}
+
 // see authentication spec doc for these magic numbers
 #define CHAL_DATLEN  29
 #define CHUP_DATLEN  29
@@ -766,15 +827,42 @@ void crypto(char *keyfile_name) {
   struct machDataInFlash mdf;
   struct privKeyInFlash pkf[MAXKEYS];
 
-  FILE *keyfile;
-  
-  keyfile = fopen(keyfile_name, "rb");
-  if( keyfile == NULL ) {
-    printf( "can't open keyfile, quitting.\n" );
-    exit(0);
+  // If the user specified a keyfile, read the keys from that file.
+  // Otherwise, read them from the eeprom.
+  if(keyfile_name && *keyfile_name) {
+    FILE *keyfile;
+    keyfile = fopen(keyfile_name, "rb");
+    if( keyfile == NULL ) {
+        printf( "can't open keyfile, quitting.\n" );
+        exit(0);
+    }
+    fread(&pkf, sizeof(struct privKeyInFlash), MAXKEYS, keyfile);
+    fread(&mdf, sizeof(struct machDataInFlash), 1, keyfile);
+    fclose(keyfile);
   }
-  fread(&pkf, sizeof(struct privKeyInFlash), MAXKEYS, keyfile);
-  fread(&mdf, sizeof(struct machDataInFlash), 1, keyfile);
+  else {
+        unsigned char bytes[16384];
+        int addr = EEPROM_ADDR;
+        int i2c_file;
+
+        // Open a connection to the I2C userspace control file.
+        if ((i2c_file = open(I2C_FILE_NAME, O_RDWR)) < 0) {
+            perror("Unable to open i2c control file");
+            exit(1);
+        }
+
+        // Read data from the eeprom into the buffer *bytes.
+        if(read_from_eeprom(i2c_file, addr, bytes, sizeof(bytes))) {
+            fprintf(stderr, "Unable to read from keyfile\n");
+            exit(1);
+        }
+
+        int privKeyBytes = sizeof(struct privKeyInFlash)*MAXKEYS;
+        memcpy(&pkf, bytes, privKeyBytes);
+        memcpy(&mdf, bytes+privKeyBytes, sizeof(struct machDataInFlash));
+
+        close(i2c_file);
+    }
   
   MACHDATABASE = &mdf;
   KEYBASE = &(pkf[0]);

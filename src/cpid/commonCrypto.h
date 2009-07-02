@@ -19,6 +19,8 @@ reserve 16 kbytes total for key storage at top of Flash memory:
 #define RAND_ADVL_DBG 0    // remember to turn off debug output for RAND and ADVL for production
 #define DEBUG_SETEC   0    // remember to turn off SETEC debugging for production
 
+#define DEFAULT_IO_PIPE "/tmp/.cpid"
+
 typedef unsigned char UINT8;
 typedef unsigned char octet;
 

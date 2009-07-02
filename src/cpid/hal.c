@@ -19,7 +19,6 @@
 #include <sys/un.h>
 #include <stdlib.h>
 #include <signal.h>
-#define DEFAULT_IO_PIPE "/tmp/.cpid"
 
 
 // these variables comes from crypto.c
@@ -33,8 +32,6 @@ static int CP_initialize_io(const char *socket_name) {
     int temp_socket;
     static struct sockaddr_un sa;
     int size = 1;
-
-    signal(SIGPIPE, SIG_IGN);
 
     // Create the fifo node, making sure it doesn't exist.
     unlink(socket_name);
@@ -133,7 +130,9 @@ unsigned char CPgetc() {
 
     //read 1 char @ a time from stdin
     if(1!=read(current_socket,&c,1)) {
-        perror("Unable to read"); 
+        // Not being able to read probably indicates the other side of the
+        // connection has closed.  Attempt to make a new connection.
+//        perror("Unable to read"); 
         CP_accept_new_connection();
         if(1!=read(current_socket,&c,1)) {
             perror("Unable to read character, so dropped");
@@ -161,7 +160,9 @@ int CPputc( char c ) {
     if(!io_initialized)
         CP_accept_new_connection();
     if(1!=write(current_socket, &c, 1)) {
-        perror("Unable to write character");
+        // The inability to write probably signals the end of a connection.
+        // Try to accept a new connection.
+//        perror("Unable to write character");
         CP_accept_new_connection();
         if(1!=write(current_socket, &c, 1)) {
             perror("Tried again and failed, so dropped character");
