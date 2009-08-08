@@ -49,6 +49,13 @@
 #include <linux/i2c-dev.h>
 #include <fcntl.h>
 
+#include <string.h>
+#include <unistd.h>
+
+#include <sys/ioctl.h>
+//#include <linux/cryptodev.h>
+#include "cryptodev.h"
+
 unsigned int keyCandidate = 0xFFFFFFFF;
 unsigned int *keyPtr = 0;
 unsigned int **keyHandle = &keyPtr;
@@ -62,6 +69,10 @@ unsigned int powerTimer = 0;
 
 unsigned char userPresent = 0;
 unsigned int userAuthTime = 0;
+
+#define MAX_CHAL_RESULT_LEN  1024   // supposed to be smaller than 448 bytes
+byte chalResult[MAX_CHAL_RESULT_LEN]; 
+unsigned int chalResultPtr = 0;
 
 typedef enum
 {
@@ -213,6 +224,146 @@ int GenPkcs1Padding(UINT8 *buf, int len, UINT8 *hashVal) {
 
 }
 
+void chalBufInit() {
+  int i = 0;
+  for( i = 0; i < MAX_CHAL_RESULT_LEN; i++ ) {
+    chalResult[i] = 0;
+  }
+  chalResultPtr = 0;
+}
+
+void chalBufUpdate(byte *data, int size) {
+  int i;
+
+  i = 0;
+  while( (chalResultPtr < MAX_CHAL_RESULT_LEN) && (i < size) ) {
+    chalResult[chalResultPtr] = data[i];
+    chalResultPtr++; i++;
+  }
+  if( chalResultPtr >= MAX_CHAL_RESULT_LEN ) {
+    printf( "Warning: ran off the end of the challenge buffer, AES hash will be broken.\n" );
+  }
+}
+
+#define	BLOCK_SIZE	16
+#define	KEY_SIZE	16
+
+#define STMP3XXX_DCP_ENC    0x0001
+#define STMP3XXX_DCP_DEC    0x0002
+#define STMP3XXX_DCP_ECB    0x0004
+#define STMP3XXX_DCP_CBC    0x0008
+#define STMP3XXX_DCP_CBC_INIT   0x0010
+#define STMP3XXX_DCP_OTPKEY 0x0020
+/* hash flags */
+#define STMP3XXX_DCP_INIT   0x0001
+#define STMP3XXX_DCP_UPDATE 0x0002
+#define STMP3XXX_DCP_FINAL  0x0004
+
+int chalBuffFlush() {
+  // this sends the data to the AES unit and prints it to the console in base-64
+  int fd = -1, cfd = -1;
+  struct writer_cb_parm_s writer;
+
+  struct {
+    char	in[MAX_CHAL_RESULT_LEN],
+      encrypted[MAX_CHAL_RESULT_LEN],
+      decrypted[MAX_CHAL_RESULT_LEN],
+      iv[BLOCK_SIZE],
+      key[KEY_SIZE];
+  } data;
+  int i;
+
+  struct session_op sess;
+  struct crypt_op cryp;
+
+  memset(&sess, 0, sizeof(sess));
+  memset(&cryp, 0, sizeof(cryp));
+
+  for( i = 0; i < BLOCK_SIZE; i++ ) {
+    data.iv[i] = 0x00; // set initial value to 0
+  }
+  for( i = 0; i < MAX_CHAL_RESULT_LEN; i++ ) {
+    data.in[i] = 0;
+    data.encrypted[i] = 0;
+    data.decrypted[i] = 0;
+  }
+  for( i = 0; i < KEY_SIZE; i++ ) {
+    data.key[i] = 0;
+  }
+  
+  /* Open the crypto device */
+  fd = open("/dev/crypto", O_RDWR, 0);
+  if (fd < 0) {
+    perror("open(/dev/crypto)");
+    return 1;
+  }
+  
+  /* Clone file descriptor */
+  if (ioctl(fd, CRIOGET, &cfd)) {
+    perror("ioctl(CRIOGET)");
+    return 1;
+  }
+
+  /* Set close-on-exec (not really neede here) */
+  if (fcntl(cfd, F_SETFD, 1) == -1) {
+    perror("fcntl(F_SETFD)");
+    return 1;
+  }
+  /* Get crypto session for AES128 */
+  sess.cipher = CRYPTO_CIPHER_NAME_CBC;
+  sess.alg_name = "aes";
+  sess.alg_namelen = strlen(sess.alg_name);
+  sess.keylen = KEY_SIZE;
+  // sess.key = data.key; // key is the OTP key
+  if (ioctl(cfd, CIOCGSESSION, &sess)) {
+    perror("ioctl(CIOCGSESSION)");
+    return 1;
+  }
+
+  for( i = 0; i < chalResultPtr; i++ ) {
+    data.in[i] = chalResult[i];
+  }
+  while( (i % 16) != 0 ) {
+    i++;  // round up to the nearest block length
+  }
+
+  /* Encrypt data.in to data.encrypted */
+  cryp.ses = sess.ses;
+  cryp.len = i; // chalResultPtr rounded up to nearest 16-byte block (128-bit block)
+  cryp.src = data.in;
+  cryp.dst = data.encrypted;
+  cryp.iv = data.iv;
+  cryp.op = COP_ENCRYPT;
+  cryp.flags = STMP3XXX_DCP_OTPKEY; // use the user un-readable OTP key
+  if (ioctl(cfd, CIOCCRYPT, &cryp)) {
+    perror("ioctl(CIOCCRYPT)");
+    return 1;
+  }
+	
+  memset(&writer, 0, sizeof(writer));
+  base64_writer(&writer, data.encrypted, i, NULL); // send the encrypted data out!
+  base64_finish_write(&writer, NULL );
+
+  /* Finish crypto session */
+  if (ioctl(cfd, CIOCFSESSION, &sess.ses)) {
+    perror("ioctl(CIOCFSESSION)");
+    return 1;
+  }
+  
+  /* Close cloned descriptor */
+  if (close(cfd)) {
+    perror("close(cfd)");
+    return 1;
+  }
+  
+  /* Close the original descriptor */
+  if (close(fd)) {
+    perror("close(fd)");
+    return 1;
+  }
+
+  return 0;
+}
 
 /*
 output: rm, PAQS(OK), vers, S(rn, rm, x, h(PIDx), Paqs(OK), vers)
@@ -303,6 +454,8 @@ void doChal(char *data, int datLen, char userType) {
   mpnzero(&B);
   mpnzero(&mblind);
   mpnzero(&mSecBlind);
+
+  chalBufInit();
 
   if( userType == CHAL_NOUSER ) {  // only check/increment authcount on auths that don't require user presence
     if( authCount >= AUTH_MAX_AUTHS ) { // fail if auth count is too high
@@ -404,7 +557,7 @@ void doChal(char *data, int datLen, char userType) {
   }
   mpnzero(&m);
   if(mpnsetbin(&m, (byte *) m_os, 256) != 0) { CPputs( "FAIL" ); goto cleanup; }
-  free(m_os); m_os = NULL;// clear out the temp buffer
+  free(m_os); m_os = NULL;// clear out the temp bufefr
 
   rsakpInit(&keypair);
   if( mpnsetbin(&keypair.e, mdat->AQSe, 4) != 0 ) { CPputs( "FAIL" ); goto cleanup; }
@@ -446,6 +599,7 @@ void doChal(char *data, int datLen, char userType) {
   m_os[i++] = 0;
 
   memset(&writer, 0, sizeof(writer));
+  chalBufUpdate(m_os, SIGM_OS_SIZE);
   base64_writer( &writer, m_os, SIGM_OS_SIZE, NULL );
   base64_finish_write(&writer, NULL );
   free( m_os ); m_os = NULL;
@@ -597,10 +751,13 @@ void doChal(char *data, int datLen, char userType) {
     goto cleanup;
   }
   memset(&writer, 0, sizeof(writer));
+  chalBufUpdate(cipher_os, MP_WORDS_TO_BYTES(mblind.size));
   base64_writer( &writer, cipher_os, MP_WORDS_TO_BYTES(mblind.size), NULL );
   base64_finish_write(&writer, NULL );
   free( cipher_os ); cipher_os = NULL;
   mpnfree(&mblind);
+
+  chalBuffFlush();
 
  cleanup: // dealloc anything that could have been alloc'd...
   CPputc( ASCII_EOF );
@@ -858,6 +1015,7 @@ void crypto(char *keyfile_name) {
         }
 
         int privKeyBytes = sizeof(struct privKeyInFlash)*MAXKEYS;
+	//        int privKeyBytes = PRIVKEY_REC_SIZE * MAXKEYS;  // privkey records are padded!
         memcpy(&pkf, bytes, privKeyBytes);
         memcpy(&mdf, bytes+privKeyBytes, sizeof(struct machDataInFlash));
 
@@ -1052,9 +1210,9 @@ void crypto(char *keyfile_name) {
 	}
         break;
       case PARSE_END:
-	printf( "parse_end\n" );
+	//	printf( "parse_end\n" );
 	if( c != ASCII_EOF ) {
-	  printf( "not ascii_eof %d\n", (int) c );
+	  //	  printf( "not ascii_eof %d\n", (int) c );
 	  goto abortParse;
 	}
 	// ok, we had a well-formed input string. Let's do something with it now.

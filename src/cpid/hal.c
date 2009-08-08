@@ -157,6 +157,7 @@ int CPputs( char *str ) {
 }
 
 int CPputc( char c ) {
+  //  printf( "%c", c ); fflush(stdout);
     if(!io_initialized)
         CP_accept_new_connection();
     if(1!=write(current_socket, &c, 1)) {

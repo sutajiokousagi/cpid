@@ -1,19 +1,39 @@
 #include <unistd.h>
 
 /* size of a private key:
-PKI_N:0:  512 hex digits = 2048 bits
+PKI_N:0:  256 hex digits = 1024 bits
 PKI_E:0:  8   hex digits = 32 bits
 PKI_I:0:  32  hex digits = 128 bits
-PKI_P:0:  256 hex digits = 1024 bits
-PKI_Q:0:  256 hex digits = 1024 bits
-PKI_DP:0: 256 hex digits = 1024 bits
-PKI_DQ:0: 256 hex digits = 1024 bits
-PKI_QI:0: 256 hex digits = 1024 bits
+PKI_P:0:  128 hex digits = 512 bits
+PKI_Q:0:  128 hex digits = 512 bits
+PKI_DP:0: 128 hex digits = 512 bits
+PKI_DQ:0: 128 hex digits = 512 bits
+PKI_QI:0: 128 hex digits = 512 bits
 
-Total size: 7328 bits = 916 bytes
+Total size: 7328 bits = 472 bytes
+Pad to 512 bytes/record
 
-reserve 16 kbytes total for key storage at top of Flash memory:
-0x0801C000 - 0x0801FFFF
+Size of EEPROM: 16 kbytes
+
+Need to store:
+- private keys (local only)
+- machine data record (local only)
+  - id
+  - sn
+  - hwversion
+  - owner keys
+  - AQS public keys
+  - some entropy seeds
+
+- block encrypted to server private key:
+  - 128-bit super-secret AES key (16 bytes)
+  - 128-bit GUID (16 bytes)
+  - 128-bit Serial number (16 bytes)
+  - 128-bit version (16 bytes)
+  - for each private key: 149 bytes each
+    - 1-byte key ID index plus 128-bit(16b) guid
+    - public key 1024-bit(128b) N
+    - public key 32-bit(4b) E
 
 */
 #define RAND_ADVL_DBG 0    // remember to turn off debug output for RAND and ADVL for production
@@ -42,14 +62,15 @@ struct privKeyInFlash {
   octet  n[128];
   octet  e[4];
   octet  created[4];
+  octet  padding[40]; // pad to 512 byte record length
 };
 
-#define MAXKEYS 24
+#define MAXKEYS 21
 struct privKeyInFlash *KEYBASE;
 #define KEYRECSIZE 0x200
 //#define KEYMINBOUND (unsigned long)(*KEYBASE))
 //#define KEYMAXBOUND (unsigned long)(*KEYBASE + sizeof(struct privKeyInFlash) * MAXKEYS))
-#define NUM_OK  128  // chumby can exchange hands or have passwords lost 128 times...
+#define NUM_OK  28  // chumby can exchange hands or have passwords lost 28 times...
 #define OK_SIZE 16
 
 struct machDataInFlash {  // this is machine specific data

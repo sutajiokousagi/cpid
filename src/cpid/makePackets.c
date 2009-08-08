@@ -31,9 +31,12 @@
 
 #ifdef HAVE_DOSISH_SYSTEM
   #define LF "\r\n"
+#warning "outputting two characters per LF"
 #else
   #define LF "\n"
 #endif
+
+int ccount = 0;
 
 /* The base-64 character list */
 static char bintoasc[] =  // per ET, removed number 64 as it is redundant
@@ -141,16 +144,16 @@ int base64_writer (void *cb_value, const void *buffer, size_t count, char *pem_n
         {
           idx = 0;
           c = bintoasc[(*radbuf >> 2) & 077];
-          CPputc (c);
+          CPputc (c); ccount++;
           c = bintoasc[(((*radbuf<<4)&060)|((radbuf[1] >> 4)&017))&077];
-          CPputc (c);
+          CPputc (c); ccount++;
           c = bintoasc[(((radbuf[1]<<2)&074)|((radbuf[2]>>6)&03))&077];
-          CPputc (c);
+          CPputc (c); ccount++;
           c = bintoasc[radbuf[2]&077];
-          CPputc (c);
+          CPputc (c); ccount++;
           if (++quad_count >= (64/4))
             {
-              CPputs (LF);
+              CPputs (LF); ccount++;
               quad_count = 0;
             }
         }
@@ -179,32 +182,35 @@ int base64_finish_write (struct writer_cb_parm_s *parm, char *pem_name) {
   if (idx)
     {
       c = bintoasc[(*radbuf>>2)&077];
-      CPputc (c);
+      CPputc (c); ccount++;
       if (idx == 1)
         {
           c = bintoasc[((*radbuf << 4) & 060) & 077];
-          CPputc (c);
-          CPputc ('=');
-          CPputc ('=');
+          CPputc (c); ccount++;
+          CPputc ('='); ccount++;
+          CPputc ('='); ccount++;
         }
       else
         {
           c = bintoasc[(((*radbuf<<4)&060)|((radbuf[1]>>4)&017))&077];
-          CPputc (c);
+          CPputc (c); ccount++;
           c = bintoasc[((radbuf[1] << 2) & 074) & 077];
-          CPputc (c);
-          CPputc ('=');
+          CPputc (c); ccount++;
+          CPputc ('='); ccount++;
 
         }
       if (++quad_count >= (64/4))
         {
-          CPputs (LF);
+          CPputs (LF); ccount++;
           quad_count = 0;
         }
     }
 
   if (quad_count)
-    CPputs (LF);
+    CPputs (LF); ccount++;
+
+  //  printf( "\nbase64writer finished with %d characters\n", ccount );
+  ccount = 0;
 
   if (pem_name)
     {
