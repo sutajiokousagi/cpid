@@ -281,7 +281,7 @@ int b64decode(const char* s, void** datap, size_t* lenp)
   if (((unsigned) ns) & 0x3)	return 2;
 
   nt = (ns / 4) * 3;
-  t = te = malloc(nt + 1);
+  t = te = calloc(nt + 1, 1);   // need to clear in case return type is bigger than extracted data
   if( t == NULL ) // per ET
     return 1;
 

@@ -160,6 +160,8 @@ void doPidx(char *data, int datLen) {
   struct writer_cb_parm_s writer;
   struct privKeyInFlash *pkey;
 
+  //  printf( "doing pidx.\n" ); fflush(stdout);
+  //  printf( "b64data: %s\n", data );
   if(b64decode(data, (void **)kHandle, &len)) { // per ET
     free( *kHandle ); *kHandle = NULL;
     return;
@@ -168,8 +170,13 @@ void doPidx(char *data, int datLen) {
     free( *kHandle ); *kHandle = NULL;
     return;
   }
-  x = **kHandle;
+  //  printf( "b64len: %d\n", len );
+  //  printf( "khandle, *khandle, **khandle: %lx, %lx, %lx\n", kHandle, *kHandle, **kHandle );
+  x = (**kHandle) & 0xFFFF;
+  //  printf( "x: %d\n", x);
   pkey = setKey(x);
+  //  printf( "pkey: %lx\n", pkey );
+  //  fflush(stdout);
   free( *kHandle ); *kHandle = NULL;
   if( pkey == NULL ) { CPputs( "FAIL" ); CPputc( ASCII_EOF ); return; }
 
@@ -483,7 +490,7 @@ void doChal(char *data, int datLen, char userType) {
     free( *kHandle ); *kHandle = NULL;
     return;
   }
-  x = (unsigned short) **kHandle;
+  x = ((unsigned short) **kHandle) & 0xFFFF;
   free( *kHandle ); *kHandle = NULL;
   if( x >= MAXKEYS ) { // fixed ge/gtr bug
     CPputs( "FAIL" );
@@ -793,7 +800,7 @@ void doPkey(char *data, int datLen) {
     free( *kHandle ); *kHandle = NULL;
     return;
   }
-  outputPublicKey(**kHandle);
+  outputPublicKey((**kHandle) & 0xFFFF);
   free( *kHandle ); *kHandle = NULL;
 
   return;
@@ -1094,6 +1101,7 @@ void crypto(char *keyfile_name) {
       powerTimer = time(NULL); // update the power-down timer
       if( c == '!' ) { // synchronize the stream to '!' character
 	CPputc('?'); // rise and shine, let the host know we are awake now.
+	//	printf( "." ); fflush(stdout);
 	goto resetNoStop;
       } else {
 	// was power management code here
@@ -1112,6 +1120,17 @@ void crypto(char *keyfile_name) {
           // parse the command
 	  expectedLen = 0;  // invariant: expectedLen is 0 unless otherwise spec'd by cmd
 	  datIndex = 0;
+#if 0
+	  {
+	    char cmd2[5];
+	    int kk;
+	    for( kk = 0; kk < 4; kk ++ )
+	      cmd2[kk] = cmd[kk];
+	    cmd2[kk] = '\0';
+	    printf( "%s", cmd2 );
+	    fflush(stdout);
+	  }
+#endif
           if( 0 == strncmp("CHAL", cmd, 4) ) {  // CHAL packet
             state = PARSE_DAT;
             expectedLen = CHAL_DATLEN;
