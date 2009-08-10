@@ -105,7 +105,7 @@ static void CP_accept_new_connection() {
     size = 1;
     if((setsockopt(new_socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)))<0) {
         perror("Unable to set up socket send size");
-        return -1;
+        return;
     }
 
     // Adjust the size of the socket to be just big enough to hold one
@@ -113,13 +113,15 @@ static void CP_accept_new_connection() {
     size = 1;
     if((setsockopt(new_socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)))<0) {
         perror("Unable to set up socket receive size");
-        return -1;
+        return;
     }
 
 
     if(current_socket)
         close(current_socket);
     current_socket = new_socket;
+
+    return;
 }
 
 
