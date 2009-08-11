@@ -1020,8 +1020,6 @@ void crypto(char *keyfile_name) {
             fprintf(stderr, "Unable to read from keyfile\n");
             exit(1);
         }
-        write(1, bytes, sizeof(bytes));
-        exit(0);
 
         int privKeyBytes = sizeof(struct privKeyInFlash)*MAXKEYS;
 	//        int privKeyBytes = PRIVKEY_REC_SIZE * MAXKEYS;  // privkey records are padded!
