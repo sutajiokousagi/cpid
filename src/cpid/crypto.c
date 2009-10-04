@@ -1179,8 +1179,8 @@ void crypto(char *keyfile_name) {
             state = PARSE_DAT;
             expectedLen = ALRM_DATLEN;
           } else if( 0 == strncmp("DOWN", cmd, 4)) {
-	    printf( "Issuing /sbin/shutdown command, system going down...\n" );
-	    system("/sbin/shutdown");
+	    printf( "Issuing /sbin/poweroff command, system going down...\n" );
+	    system("/sbin/poweroff");
             // power down the chumby
             // cmdPowerDown();
             goto resetParse;
