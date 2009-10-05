@@ -806,6 +806,54 @@ void doPkey(char *data, int datLen) {
   return;
 }
 
+/*
+  Sets the wake-up alarm time
+*/
+void doAlarm(char *data, int datLen) {
+  unsigned int *kPtr = NULL;
+  unsigned int **kHandle = &kPtr;
+  unsigned int len = 0;
+
+  unsigned int alarmOffset = 0;
+  unsigned int curTime = 0;
+  FILE *wakealarm;
+
+  if(b64decode(data, (void **)kHandle, &len)) { // per ET
+    free( *kHandle );
+    return;
+  }
+  if( len != 4 ) {
+    free( *kHandle );
+    return;
+  }
+  alarmOffset = **kHandle;
+  free( *kHandle );
+
+  curTime = time(NULL);
+  if( (alarmOffset + curTime) < curTime ) {
+    // we overflow; don't set the alarm and send a warning message
+    CPputs( "OVFW\n" );
+    CPputc( ASCII_EOF );
+    return;
+  }
+  
+  printf( "current time: %d\n", curTime );
+  printf( "writing %d to /sys/class/rtc/rtc0/wakealarm\n", alarmOffset + curTime );
+  wakealarm = fopen( "/sys/class/rtc/rtc0/wakealarm", "w" );
+  if( wakealarm == NULL ) {
+    printf( "Can't open /sys/class/rtc/rtc0/wakealarm for writing, aborting alarm set.\n" );
+    CPputs( "OVFW\n" );  // kick out an error condition, albeit inaccurate
+    CPputc( ASCII_EOF );
+    return;
+  }
+  fprintf( wakealarm, "%d\n", alarmOffset + curTime );
+
+  CPputs( "ASET\n" );
+  CPputc( ASCII_EOF );
+  return;
+}
+
+
 void sendTime() {
   unsigned long timesecs = time(NULL);
   struct writer_cb_parm_s writer;
@@ -1292,6 +1340,8 @@ void crypto(char *keyfile_name) {
 	  doPkey(data, datIndex);
 	} else if( 0 == strncmp("PIDX", cmd, 4)) {
 	  doPidx(data, datIndex);
+	} else if( 0 == strncmp("ALRM", cmd, 4)) {
+	  doAlarm(data, datIndex);
 	} else {
 	  goto resetParse;
 	}
