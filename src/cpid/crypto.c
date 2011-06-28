@@ -1025,6 +1025,93 @@ static int read_from_eeprom(int file, int addr, char *bytes, int size) {
 #define MAXLEN  384
 
 /*************************************************************************/
+#define ESD_CONFIG_AREA_PART1_OFFSET    0xc000
+// pragma pack() not supported on all platforms, so we make everything dword-aligned using arrays
+// WARNING: we're being lazy here and assuming that the platform any utility using this
+// is running on little-endian! Otherwise you'll need to convert u32 values
+typedef union {
+        char name[4];
+        unsigned int uname;
+} block_def_name;
+
+typedef struct _block_def {
+        unsigned int offset;            // Offset from start of partition 1; if 0xffffffff, end of block table
+        unsigned int length;            // Length of block in bytes
+        unsigned char block_ver[4];     // Version of this block data, e.g. 1,0,0,0
+        block_def_name n;               // Name of block, e.g. "krnA" (not NULL-terminated, a-z, A-Z, 0-9 and non-escape symbols allowed)
+} block_def;
+
+typedef struct _config_area {
+        char sig[4];    // 'C','f','g','*'
+        unsigned char area_version[4];  // 1,0,0,0
+        unsigned char active_index[4];  // element 0 is 0 if krnA active, 1 if krnB; elements 1-3 are padding
+        unsigned char updating[4];      // element 0 is 1 if update in progress; elements 1-3 are padding
+        char last_update[16];           // NULL-terminated version of last successful update, e.g. "1.7.1892"
+        unsigned int p1_offset;         // Offset in bytes from start of device to start of partition 1
+        char factory_data[220];         // Data recorded in manufacturing in format KEY=VALUE<newline>...
+        char configname[128];           // NULL-terminated CONFIGNAME of current build, e.g. "silvermoon_sd"
+        unsigned char unused2[128];
+        unsigned char mbr_backup[512];  // Backup copy of MBR
+        block_def block_table[64];      // Block table entries ending with offset==0xffffffff
+        unsigned char unused3[0];
+} config_area;
+
+static int read_from_config_block(unsigned char *bytes, int size) {
+    int fd = open("/dev/mmcblk0p1", O_RDONLY);
+    int err = 1;
+    int block;
+    config_area cfg;
+
+    if (fd == -1) {
+        perror("Unable to open config block device");
+        return 1;
+    }
+
+    /* Seek to config table */
+    if (-1 == lseek(fd, ESD_CONFIG_AREA_PART1_OFFSET, SEEK_SET)) {
+        perror("Unable to seek to config area");
+        goto out;
+    }
+
+    /* Read config table */
+    if (-1 == read(fd, &cfg, sizeof(cfg))) {
+        perror("Unable to read config area");
+        goto out;
+    }
+
+    /* Locate cpid block */
+    for (block=0; block < sizeof(cfg.block_table) / sizeof(cfg.block_table[0]); block++) {
+        if (!memcmp(cfg.block_table[block].n.name, "cpid", 4)) {
+            int bytes_read;
+
+            /* Seek to cpid block */
+            if (-1 == lseek(fd, cfg.block_table[block].offset, SEEK_SET)) {
+                perror("Unable to seek to cpid block");
+                goto out;
+            }
+
+            /* Read cpid block */
+            while (size > 0) {
+
+                bytes_read = read(fd, bytes, size);
+                if (bytes_read == -1) {
+                    perror("Unable to read cpid block");
+                    goto out;
+                }
+
+                bytes += bytes_read;
+                size  -= bytes_read;
+            }
+            err = 0;
+            goto out;
+        }
+    }
+
+out:
+    close(fd);
+    return err;
+}
+
 
 void crypto(char *keyfile_name) {
   char cmd[4];
@@ -1057,16 +1144,21 @@ void crypto(char *keyfile_name) {
         int addr = EEPROM_ADDR;
         int i2c_file;
 
-        // Open a connection to the I2C userspace control file.
-        if ((i2c_file = open(I2C_FILE_NAME, O_RDWR)) < 0) {
-            perror("Unable to open i2c control file");
-            exit(1);
-        }
+        /* Attempt to read from the config block, and fall back
+           to i2c if that fails.
+         */
+        if (read_from_config_block(bytes, sizeof(bytes))) {
+            // Open a connection to the I2C userspace control file.
+            if ((i2c_file = open(I2C_FILE_NAME, O_RDWR)) < 0) {
+                perror("Unable to open i2c control file");
+                exit(1);
+            }
 
-        // Read data from the eeprom into the buffer *bytes.
-        if(read_from_eeprom(i2c_file, addr, bytes, sizeof(bytes))) {
-            fprintf(stderr, "Unable to read from keyfile\n");
-            exit(1);
+            // Read data from the eeprom into the buffer *bytes.
+            if(read_from_eeprom(i2c_file, addr, bytes, sizeof(bytes))) {
+                fprintf(stderr, "Unable to read from keyfile\n");
+                exit(1);
+            }
         }
 
         int privKeyBytes = sizeof(struct privKeyInFlash)*MAXKEYS;
